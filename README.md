@@ -20,8 +20,10 @@ Every part can be turned off in the config (`modules`); an off part has no tool 
 ## Install
 
 ```bash
-dsh plugin --profile web add dsh-imagine
+dsh plugin --profile web add github:JoaoZaokk/dsh-imagine
 ```
+
+Or from the DeepSeek Harness - Mobile app: Ajustes → Extensões → Plugins → Descobrir → "Imagine (Gemini)".
 
 Give the dsh process a key, either way:
 
