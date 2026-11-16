@@ -21,7 +21,8 @@ import { createStore } from './lib/store.js';
 
 export const name = 'dsh-imagine';
 // `tools` is required: the plugin waits for the agent's tool registry, so the tools always register (an optional service may not exist yet when apply runs).
-export const inject = { webServer: { required: true }, connection: { required: true }, tools: { required: true } };
+// `credentials` is optional: when the dsh has its credential store, a key saved from the phone (credentials/set) is found there first.
+export const inject = { webServer: { required: true }, connection: { required: true }, tools: { required: true }, credentials: { required: false } };
 
 const VERSION = '0.1.0';
 const BASE = '/imagine';
@@ -90,11 +91,22 @@ export function dshHome() {
   return process.env.DSH_HOME || join(homedir(), '.dsh');
 }
 
-/** The key: the named environment variable first, then a file. Trimmed; undefined when absent. */
-export function keyReader(config = {}, env = process.env) {
+/**
+ * The key. In order: the dsh credential store (a key saved from the phone; it also looks at the
+ * environment variable of the same name), then the environment variable, then a file. Trimmed; undefined when absent.
+ * Async because the store is.
+ */
+export function keyReader(config = {}, env = process.env, credentials) {
   const file = String(config.apiKeyFile ?? join(dshHome(), 'gemini.key')).replace(/^~(?=\/)/, homedir());
-  return () => {
-    const fromEnv = env[config.apiKeyEnv ?? DEFAULTS.apiKeyEnv];
+  const refName = config.apiKeyEnv ?? DEFAULTS.apiKeyEnv;
+  return async () => {
+    try {
+      const hit = await credentials?.resolve?.(refName);
+      if (hit?.value && String(hit.value).trim()) return String(hit.value).trim();
+    } catch {
+      // A store that cannot answer is the same as a key that is not there; the next source decides.
+    }
+    const fromEnv = env[refName];
     if (fromEnv && fromEnv.trim()) return fromEnv.trim();
     try {
       const fromFile = readFileSync(file, 'utf8').trim();
@@ -108,12 +120,12 @@ export function keyReader(config = {}, env = process.env) {
 export function apply(ctx, config = {}) {
   const connection = Reflect.get(ctx, 'connection');
   const settings = resolveSettings(config);
-  const getKey = keyReader(config);
+  const getKey = keyReader(config, process.env, Reflect.get(ctx, 'credentials'));
   const store = createStore({ dir: join(dshHome(), 'imagine'), keep: settings.keep });
   const gemini = createGemini({ getKey });
   // What happened to the agent tools, for _status: the phone can say "the agent cannot draw yet".
   const agentTools = { ready: false };
-  const api = createHandler({ gemini, store, settings, hasKey: () => Boolean(getKey()), agentTools: () => ({ ...agentTools }) });
+  const api = createHandler({ gemini, store, settings, hasKey: async () => Boolean(await getKey()), agentTools: () => ({ ...agentTools }) });
 
   ctx.effect(
     () =>

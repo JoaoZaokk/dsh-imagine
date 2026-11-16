@@ -143,3 +143,23 @@ test('wav helpers', () => {
   assert.equal(imageSize(Buffer.from('xxxx')), undefined);
   assert.equal(pcmToWav(Buffer.alloc(0)).length, 44);
 });
+
+test('check: lists one model with the key in a header, and says nothing when the key is good', async () => {
+  let seen;
+  const gemini = client(async (url, init) => { seen = { url, init }; return reply(200, { models: [] })(); });
+  assert.equal(await gemini.check(), undefined);
+  assert.match(String(seen.url), /\/models\?pageSize=1$/);
+  assert.equal(seen.init.headers['x-goog-api-key'], 'secret-key-123');
+  assert.ok(!String(seen.url).includes('secret-key-123'), 'the key never goes in the URL');
+});
+
+test('check: a key Google refuses is badKey, an empty account is billing, a missing key is notConfigured', async () => {
+  const bad = client(reply(400, { error: { status: 'INVALID_ARGUMENT', message: 'API key not valid. Please pass a valid API key.' } }));
+  await assert.rejects(() => bad.check(), (e) => e.code === 'badKey');
+  const broke = client(reply(402, { error: { message: 'Your prepayment credits are depleted.' } }));
+  await assert.rejects(() => broke.check(), (e) => e.code === 'billing');
+  const none = createGemini({ getKey: async () => undefined, fetch: async () => { throw new Error('must not call'); } });
+  await assert.rejects(() => none.check(), (e) => e.code === 'notConfigured');
+  const down = client(async () => { throw new Error('offline'); });
+  await assert.rejects(() => down.check(), (e) => e.code === 'upstream');
+});

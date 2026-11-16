@@ -7,7 +7,7 @@ import { openLive } from '../lib/live.js';
 import { DEFAULTS, keyReader } from '../index.js';
 import { isWav, wavSeconds } from '../lib/wav.js';
 
-const key = keyReader({})();
+const key = await keyReader({})();
 const skip = key ? false : 'no GEMINI_API_KEY';
 const gemini = createGemini({ getKey: () => key });
 const norm = (text) => text.toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
@@ -37,4 +37,10 @@ test('live: a text turn comes back as audio and a transcript', { skip, timeout: 
 test('a wrong key is a clean badKey error', { skip, timeout: 30000 }, async () => {
   const wrong = createGemini({ getKey: () => 'not-a-real-key' });
   await assert.rejects(wrong.speak({ text: 'oi', model: DEFAULTS.models.speech }), { code: 'badKey' });
+});
+
+test('check: the real key passes and a made-up one is badKey', { skip, timeout: 30000 }, async () => {
+  assert.equal(await gemini.check(), undefined);
+  const wrong = createGemini({ getKey: () => 'not-a-real-key' });
+  await assert.rejects(wrong.check(), { code: 'badKey' });
 });

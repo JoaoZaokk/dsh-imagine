@@ -193,3 +193,18 @@ test('unknown routes and wrong methods', async () => {
     assert.equal((await s.post('_status', {})).status, 405);
   } finally { await s.close(); }
 });
+
+test('check: POST /check answers ok when the key works and the plugin error when it does not', async () => {
+  const good = await serve({ gemini: fakeGemini({ async check() {} }) });
+  try {
+    const res = await good.post('check', {});
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true });
+  } finally { await good.close(); }
+  const bad = await serve({ gemini: fakeGemini({ async check() { throw new ImagineError('badKey', 'API key not valid.'); } }) });
+  try {
+    const res = await bad.post('check', {});
+    assert.equal(res.status, 401);
+    assert.equal((await res.json()).error.code, 'badKey');
+  } finally { await bad.close(); }
+});

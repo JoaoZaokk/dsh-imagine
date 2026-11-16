@@ -50,22 +50,34 @@ test('an accepted request reaches the handler', async () => {
   } finally { rmSync(home, { recursive: true, force: true }); delete process.env.DSH_HOME; }
 });
 
-test('the key comes from the environment first, then a file, and is read each time', () => {
+test('the key comes from the dsh credential store, then the environment, then a file, and is read each time', async () => {
   const home = mkdtempSync(join(tmpdir(), 'key-'));
   try {
     const file = join(home, 'gemini.key');
     const env = {};
     const read = keyReader({ apiKeyFile: file }, env);
-    assert.equal(read(), undefined);
+    assert.equal(await read(), undefined);
     writeFileSync(file, '  from-file\n');
-    assert.equal(read(), 'from-file');
+    assert.equal(await read(), 'from-file');
     env.GEMINI_API_KEY = ' from-env ';
-    assert.equal(read(), 'from-env');
+    assert.equal(await read(), 'from-env');
     delete env.GEMINI_API_KEY;
     writeFileSync(file, 'rotated');
-    assert.equal(read(), 'rotated', 'a changed file is picked up without a restart');
+    assert.equal(await read(), 'rotated', 'a changed file is picked up without a restart');
     const custom = keyReader({ apiKeyEnv: 'MY_KEY', apiKeyFile: file }, { MY_KEY: 'custom' });
-    assert.equal(custom(), 'custom');
+    assert.equal(await custom(), 'custom');
+
+    // A key saved from the phone lives in the dsh store and outranks the environment and the file.
+    const stored = { value: undefined };
+    const credentials = { resolve: async (name) => (name === 'GEMINI_API_KEY' && stored.value ? { value: stored.value, source: 'stored' } : undefined) };
+    const withStore = keyReader({ apiKeyFile: file }, { GEMINI_API_KEY: 'from-env' }, credentials);
+    assert.equal(await withStore(), 'from-env', 'nothing stored yet: the environment answers');
+    stored.value = '  from-phone ';
+    assert.equal(await withStore(), 'from-phone');
+    stored.value = undefined;
+    assert.equal(await withStore(), 'from-env', 'removing the stored key falls back at once');
+    const broken = keyReader({ apiKeyFile: file }, {}, { resolve: async () => { throw new Error('store down'); } });
+    assert.equal(await broken(), 'rotated', 'a store that fails is the same as no key there');
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
