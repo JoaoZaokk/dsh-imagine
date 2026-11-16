@@ -1,0 +1,21 @@
+{
+  "name": "dsh-imagine",
+  "version": "0.1.0",
+  "description": "Gemini for the DeepSeek Harness: generate images, speak, transcribe and talk live. Tools for the agent and routes for the phone app.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["dsh", "dsh-plugin", "gemini", "image-generation", "tts", "stt", "speech", "live"],
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": ["index.js", "lib/*.js", "cordis.patch.yml", "locale/*.json", "scripts/*.mjs", "README.md"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "live": "node scripts/live-smoke.mjs"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" }
+  }
+}

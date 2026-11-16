@@ -1,0 +1,15 @@
+- insert:
+    - id: dsh-imagine
+      name: dsh-imagine
+      config:
+        # The API key is read from this environment variable of the dsh process,
+        # or from the file `apiKeyFile` (default <DSH_HOME>/gemini.key, mode 0600).
+        apiKeyEnv: GEMINI_API_KEY
+        # Turn a part off to remove its tools and routes.
+        modules:
+          image: true
+          speech: true
+          transcribe: true
+          live: true
+        # Paid credit guard: no more than this many images per calendar day.
+        dailyImageLimit: 40
