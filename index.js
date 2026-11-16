@@ -10,7 +10,9 @@
  * variable or a 0600 file, is read on each call (so it can be changed without a restart) and is never
  * logged or returned.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createGemini } from './lib/gemini.js';
@@ -18,17 +20,42 @@ import { createHandler } from './lib/handler.js';
 import { createStore } from './lib/store.js';
 
 export const name = 'dsh-imagine';
-// `tools` is optional: without the agent's tool registry the routes still work.
-export const inject = { webServer: { required: true }, connection: { required: true }, tools: { required: false } };
+// `tools` is required: the plugin waits for the agent's tool registry, so the tools always register (an optional service may not exist yet when apply runs).
+export const inject = { webServer: { required: true }, connection: { required: true }, tools: { required: true } };
 
 const VERSION = '0.1.0';
 const BASE = '/imagine';
 
-let defineTool;
-try {
-  ({ defineTool } = await import('@deepseek-ai/dsh-tools'));
-} catch {
-  // Outside a dsh install (unit tests, scripts): there is no tool registry to join.
+/**
+ * `defineTool` lives in the dsh's own `@deepseek-ai/dsh-tools`. A plugin installed into a profile is not
+ * beside that package, so a plain import fails there. Try, in order: the plain import, the copy next to
+ * the running dsh (resolved from its entry script), and an explicit path from the config.
+ */
+async function loadDefineTool(explicit) {
+  const tried = [];
+  const attempts = [
+    () => import('@deepseek-ai/dsh-tools'),
+    async () => {
+      const entry = realpathSync(process.argv[1]);
+      return import(pathToFileURL(createRequire(entry).resolve('@deepseek-ai/dsh-tools')).href);
+    },
+    ...(explicit ? [() => import(pathToFileURL(explicit).href)] : []),
+  ];
+  for (const attempt of attempts) {
+    try {
+      const module = await attempt();
+      if (typeof module.defineTool === 'function') return { defineTool: module.defineTool };
+    } catch (error) {
+      tried.push(error?.code ?? error?.message ?? String(error));
+    }
+  }
+  return { error: tried.join(', ') };
+}
+
+let loaded;
+function toolsLoader(config) {
+  loaded ??= loadDefineTool(config?.toolsModule);
+  return loaded;
 }
 
 export const DEFAULTS = {
@@ -84,7 +111,9 @@ export function apply(ctx, config = {}) {
   const getKey = keyReader(config);
   const store = createStore({ dir: join(dshHome(), 'imagine'), keep: settings.keep });
   const gemini = createGemini({ getKey });
-  const api = createHandler({ gemini, store, settings, hasKey: () => Boolean(getKey()) });
+  // What happened to the agent tools, for _status: the phone can say "the agent cannot draw yet".
+  const agentTools = { ready: false };
+  const api = createHandler({ gemini, store, settings, hasKey: () => Boolean(getKey()), agentTools: () => ({ ...agentTools }) });
 
   ctx.effect(
     () =>
@@ -107,7 +136,18 @@ export function apply(ctx, config = {}) {
   );
 
   const tools = Reflect.get(ctx, 'tools');
-  if (tools && defineTool) registerTools(tools, defineTool, { api, store, settings });
+  if (tools) {
+    toolsLoader(config).then(({ defineTool, error }) => {
+      if (defineTool) {
+        registerTools(tools, defineTool, { api, store, settings });
+        agentTools.ready = true;
+        (ctx.logger?.info ? ctx.logger.info.bind(ctx.logger) : console.log)('[dsh-imagine] agent tools ready (generate_image, speak)');
+      } else {
+        agentTools.error = String(error);
+        (ctx.logger?.warn ? ctx.logger.warn.bind(ctx.logger) : console.warn)(`[dsh-imagine] the agent tools are off because @deepseek-ai/dsh-tools could not be loaded (${error}). The routes still work. Set toolsModule to the path of its lib/index.js.`);
+      }
+    });
+  }
 }
 
 /** The agent's side. Both tools only write inside the plugin's own folder. */
