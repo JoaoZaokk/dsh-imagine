@@ -27,6 +27,7 @@ Or from the DeepSeek Harness - Mobile app: Ajustes → Extensões → Plugins �
 
 Give the dsh process a key, either way:
 
+- the dsh credential store under the name `GEMINI_API_KEY` (what the phone app writes with `credentials/set`; it outranks the rest and a change applies at once), or
 - environment variable `GEMINI_API_KEY` (name configurable with `apiKeyEnv`), or
 - a file `<DSH_HOME>/gemini.key` with mode 0600 (path configurable with `apiKeyFile`).
 

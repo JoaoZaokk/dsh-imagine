@@ -24,7 +24,7 @@ export const name = 'dsh-imagine';
 // `credentials` is optional: when the dsh has its credential store, a key saved from the phone (credentials/set) is found there first.
 export const inject = { webServer: { required: true }, connection: { required: true }, tools: { required: true }, credentials: { required: false } };
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const BASE = '/imagine';
 
 /**
