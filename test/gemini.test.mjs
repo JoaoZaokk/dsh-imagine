@@ -163,3 +163,21 @@ test('check: a key Google refuses is badKey, an empty account is billing, a miss
   const down = client(async () => { throw new Error('offline'); });
   await assert.rejects(() => down.check(), (e) => e.code === 'upstream');
 });
+
+test('check: a candidate key is tried instead of the stored one, in a header, and is never kept', async () => {
+  const seen = [];
+  const gemini = client(async (url, init) => { seen.push({ url: String(url), key: init.headers['x-goog-api-key'] }); return reply(200, { models: [] })(); });
+  await gemini.check({ key: '  candidate-key-999 ' });
+  await gemini.check();
+  assert.equal(seen[0].key, 'candidate-key-999', 'trimmed candidate');
+  assert.equal(seen[1].key, 'secret-key-123', 'the stored key is back for the next call');
+  assert.ok(seen.every((s) => !s.url.includes('key-')), 'no key in any URL');
+  const none = createGemini({ getKey: async () => undefined, fetch: reply(200, { models: [] }) });
+  assert.equal(await none.check({ key: 'only-the-candidate' }), undefined, 'a candidate works with nothing stored');
+});
+
+test('bad key: the machine reason and an expired key are recognised even when the text differs', () => {
+  assert.equal(fromGoogle(400, { error: { status: 'INVALID_ARGUMENT', message: 'Invalid.', details: [{ '@type': 'x', reason: 'API_KEY_INVALID' }] } }).code, 'badKey');
+  assert.equal(fromGoogle(400, { error: { message: 'API key expired. Please renew the API key.' } }).code, 'badKey');
+  assert.equal(fromGoogle(400, { error: { message: 'Request contains an invalid argument.' } }).code, 'badRequest', 'other 400s stay bad requests');
+});

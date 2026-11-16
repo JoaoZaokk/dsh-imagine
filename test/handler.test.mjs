@@ -208,3 +208,21 @@ test('check: POST /check answers ok when the key works and the plugin error when
     assert.equal((await res.json()).error.code, 'badKey');
   } finally { await bad.close(); }
 });
+
+test('check: a key in the body is passed to Gemini as the candidate and never echoed back', async () => {
+  const seen = [];
+  const s = await serve({ gemini: fakeGemini({ async check(args) { seen.push(args); if (args?.key === 'bad-key-value') throw new ImagineError('badKey', 'API key not valid.'); } }) });
+  try {
+    const ok = await s.post('check', { key: ' good-key-value ' });
+    assert.equal(ok.status, 200);
+    assert.equal(await ok.text(), JSON.stringify({ ok: true }), 'the answer never contains the key');
+    assert.equal(seen[0].key, 'good-key-value');
+    const bad = await s.post('check', { key: 'bad-key-value' });
+    assert.equal(bad.status, 401);
+    assert.ok(!(await bad.text()).includes('bad-key-value'));
+    const empty = await s.post('check', {});
+    assert.equal(empty.status, 200);
+    assert.equal(seen[2].key, undefined, 'no key in the body: the stored one is checked');
+    assert.equal((await s.post('check', { key: 42 })).status, 400, 'a key that is not a string is a bad request');
+  } finally { await s.close(); }
+});
