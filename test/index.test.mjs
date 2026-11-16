@@ -46,7 +46,7 @@ test('an accepted request reaches the handler', async () => {
     const r = res();
     await registered[0].handler({ url: '/imagine/_status', method: 'GET', headers: {} }, r);
     assert.equal(r.statusCode, 200);
-    assert.equal(JSON.parse(r.body).version, '0.1.0');
+    assert.equal(JSON.parse(r.body).version, '0.2.0');
   } finally { rmSync(home, { recursive: true, force: true }); delete process.env.DSH_HOME; }
 });
 
