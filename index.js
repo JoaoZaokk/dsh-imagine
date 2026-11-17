@@ -24,7 +24,7 @@ export const name = 'dsh-imagine';
 // `credentials` is optional: when the dsh has its credential store, a key saved from the phone (credentials/set) is found there first.
 export const inject = { webServer: { required: true }, connection: { required: true }, tools: { required: true }, credentials: { required: false } };
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const BASE = '/imagine';
 
 /**
@@ -52,6 +52,48 @@ async function loadDefineTool(explicit) {
   }
   return { error: tried.join(', ') };
 }
+
+/**
+ * The dsh's own Schemastery, resolved like `defineTool` (see above): the Config below is what makes the dsh build a
+ * settings form for this plugin. Without it (an old dsh, or a copy outside a dsh) the plugin runs on plain config.
+ */
+async function loadSchema() {
+  const attempts = [
+    () => import('@deepseek-ai/schemastery'),
+    async () => {
+      const entry = realpathSync(process.argv[1]);
+      return import(pathToFileURL(createRequire(entry).resolve('@deepseek-ai/schemastery')).href);
+    },
+  ];
+  for (const attempt of attempts) {
+    try {
+      const module = await attempt();
+      const z = module.default ?? module;
+      if (typeof z?.object === 'function') return z;
+    } catch {
+      // try the next place
+    }
+  }
+  return undefined;
+}
+
+const z = await loadSchema();
+
+/** The settings the dsh shows (and the phone edits). Volatile fields apply at once, with no restart. */
+export const Config = z
+  ? z.object({
+      modules: z.object({
+        image: z.boolean().default(true).volatile().description('Gerar imagens (ferramenta generate_image e tela Imagine).'),
+        speech: z.boolean().default(true).volatile().description('Falar texto (voz do Gemini).'),
+        transcribe: z.boolean().default(true).volatile().description('Transcrever áudio em texto.'),
+        live: z.boolean().default(true).volatile().description('Conversa por voz ao vivo.'),
+      }),
+      voice: z.string().default('Kore').volatile().description('Voz padrão do Gemini.'),
+      dailyImageLimit: z.number().step(1).min(0).default(40).volatile().description('Máximo de imagens por dia (trava de crédito). 0 = sem limite.'),
+      keep: z.number().step(1).min(1).default(200).volatile().description('Quantas imagens guardar no servidor.'),
+      apiKeyEnv: z.string().default('GEMINI_API_KEY').description('Nome da variável/credencial que guarda a chave.'),
+    })
+  : undefined;
 
 let loaded;
 function toolsLoader(config) {
@@ -87,6 +129,25 @@ export function resolveSettings(config = {}) {
   };
 }
 
+/**
+ * The dsh hands a plugin its volatile Config fields as references (`{ get() }`) that it updates in place when the
+ * settings change. Reading through `get()` each time is what makes an edit apply at once. Plain values pass through.
+ */
+export function unwrap(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'object' && typeof value.get === 'function') return unwrap(value.get());
+  if (Array.isArray(value)) return value.map(unwrap);
+  if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, unwrap(inner)]));
+  }
+  return value;
+}
+
+/** The merged settings, recomputed on every read from the live config. */
+export function liveSettings(config) {
+  return new Proxy({}, { get: (_, key) => resolveSettings(unwrap(config))[key], has: (_, key) => key in resolveSettings(unwrap(config)) });
+}
+
 export function dshHome() {
   return process.env.DSH_HOME || join(homedir(), '.dsh');
 }
@@ -119,9 +180,9 @@ export function keyReader(config = {}, env = process.env, credentials) {
 
 export function apply(ctx, config = {}) {
   const connection = Reflect.get(ctx, 'connection');
-  const settings = resolveSettings(config);
-  const getKey = keyReader(config, process.env, Reflect.get(ctx, 'credentials'));
-  const store = createStore({ dir: join(dshHome(), 'imagine'), keep: settings.keep });
+  const settings = liveSettings(config);
+  const getKey = keyReader(unwrap(config), process.env, Reflect.get(ctx, 'credentials'));
+  const store = createStore({ dir: join(dshHome(), 'imagine'), keep: () => settings.keep });
   const gemini = createGemini({ getKey });
   // What happened to the agent tools, for _status: the phone can say "the agent cannot draw yet".
   const agentTools = { ready: false };
@@ -164,7 +225,7 @@ export function apply(ctx, config = {}) {
 
 /** The agent's side. Both tools only write inside the plugin's own folder. */
 export function registerTools(tools, define, { api, store, settings }) {
-  if (settings.modules.image) {
+  {
     tools.register(
       define({
         name: 'generate_image',
@@ -214,9 +275,10 @@ export function registerTools(tools, define, { api, store, settings }) {
           };
         },
       }),
+      { when: () => Boolean(settings.modules.image) },
     );
   }
-  if (settings.modules.speech) {
+  {
     tools.register(
       define({
         name: 'speak',
@@ -237,6 +299,7 @@ export function registerTools(tools, define, { api, store, settings }) {
           return { path: store.addAudio(wav) };
         },
       }),
+      { when: () => Boolean(settings.modules.speech) },
     );
   }
 }

@@ -34,6 +34,18 @@ Give the dsh process a key, either way:
 The key is read on every call, so changing it needs no restart. Generated pictures and their prompts are kept in
 `<DSH_HOME>/imagine/` (newest 200, configurable with `keep`).
 
+## Settings in the dsh (and on the phone)
+
+The plugin declares its options as the dsh's own settings form (namespace `dsh-imagine`). Every field is *volatile*:
+an edit applies at once, with no restart. Turning a module off hides its agent tool and answers its route with 404.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `modules.image` / `speech` / `transcribe` / `live` | `true` | Turn a part on or off. |
+| `voice` | `Kore` | Default Gemini voice. |
+| `dailyImageLimit` | `40` | Paid-credit guard, images per day (0 = no limit). |
+| `keep` | `200` | How many pictures to keep on the server. |
+
 ## Config
 
 ```yaml

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { apply, keyReader, registerTools, resolveSettings } from '../index.js';
+import { apply, keyReader, liveSettings, registerTools, resolveSettings, unwrap } from '../index.js';
 import { createHandler } from '../lib/handler.js';
 import { createStore } from '../lib/store.js';
 import { PNG, WAV, fakeGemini, tempDir } from './helpers.mjs';
@@ -46,7 +46,7 @@ test('an accepted request reaches the handler', async () => {
     const r = res();
     await registered[0].handler({ url: '/imagine/_status', method: 'GET', headers: {} }, r);
     assert.equal(r.statusCode, 200);
-    assert.equal(JSON.parse(r.body).version, '0.2.0');
+    assert.equal(JSON.parse(r.body).version, '0.3.0');
   } finally { rmSync(home, { recursive: true, force: true }); delete process.env.DSH_HOME; }
 });
 
@@ -119,12 +119,55 @@ test('tools: generate_image and speak register, run and write only inside the pl
   } finally { done(); }
 });
 
-test('tools: a turned-off module registers nothing', () => {
+test('tools: both are always registered, and a turned-off module hides its tool through `when`, live', async () => {
   const { dir, done } = tempDir();
   try {
-    const settings = resolveSettings({ modules: { image: false, speech: false } });
+    const live = { modules: { image: false, speech: true } };
+    const settings = new Proxy({}, { get: (_, key) => resolveSettings(live)[key] });
     const defined = [];
-    registerTools({ register: (t) => defined.push(t) }, (t) => t, { api: {}, store: createStore({ dir }), settings });
-    assert.deepEqual(defined, []);
+    registerTools({ register: (t, options) => defined.push({ t, options }) }, (t) => t, { api: {}, store: createStore({ dir }), settings });
+    assert.deepEqual(defined.map((d) => d.t.name), ['generate_image', 'speak']);
+    const visible = (name) => defined.find((d) => d.t.name === name).options.when();
+    assert.equal(visible('generate_image'), false);
+    assert.equal(visible('speak'), true);
+    live.modules.image = true; live.modules.speech = false;
+    assert.equal(visible('generate_image'), true, 'turning a module on needs no restart');
+    assert.equal(visible('speak'), false);
+  } finally { done(); }
+});
+
+test('unwrap: the dsh hands volatile fields over as references; the plugin reads their current value', () => {
+  const ref = (value) => ({ get: () => value });
+  const live = { value: 'Puck' };
+  const config = { modules: { image: ref(false), speech: ref(true) }, voice: { get: () => live.value }, dailyImageLimit: ref(7), apiKeyEnv: 'GEMINI_API_KEY', list: [ref(1), 2] };
+  assert.deepEqual(unwrap(config), { modules: { image: false, speech: true }, voice: 'Puck', dailyImageLimit: 7, apiKeyEnv: 'GEMINI_API_KEY', list: [1, 2] });
+  live.value = 'Zephyr';
+  assert.equal(unwrap(config).voice, 'Zephyr', 'read again at each use, so an edit applies at once');
+  assert.deepEqual(unwrap(undefined), undefined);
+  assert.equal(unwrap(null), null);
+});
+
+test('liveSettings: every read sees the config as it is now, with the defaults filled in', () => {
+  const state = { voice: 'Kore', modules: { image: true } };
+  const config = { modules: { image: { get: () => state.modules.image } }, voice: { get: () => state.voice } };
+  const settings = liveSettings(config);
+  assert.equal(settings.voice, 'Kore');
+  assert.equal(settings.modules.image, true);
+  assert.equal(settings.modules.live, true, 'untouched modules keep their default');
+  state.voice = 'Puck'; state.modules.image = false;
+  assert.equal(settings.voice, 'Puck');
+  assert.equal(settings.modules.image, false);
+});
+
+test('the store keeps as many as it is told right now, even when that number changes', () => {
+  const { dir, done } = tempDir();
+  try {
+    let keep = 2;
+    const store = createStore({ dir, keep: () => keep });
+    for (let i = 0; i < 4; i++) store.add({ bytes: PNG, mime: 'image/png', prompt: `p${i}`, model: 'm' });
+    assert.equal(store.list().items.length, 2);
+    keep = 1;
+    store.add({ bytes: PNG, mime: 'image/png', prompt: 'last', model: 'm' });
+    assert.equal(store.list().items.length, 1, 'a lower limit applies from the next picture');
   } finally { done(); }
 });

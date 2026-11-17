@@ -1,6 +1,6 @@
 {
   "name": "dsh-imagine",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Gemini for the DeepSeek Harness: generate images, speak, transcribe and talk live. Tools for the agent and routes for the phone app.",
   "type": "module",
   "keywords": [
