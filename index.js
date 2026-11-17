@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createGemini } from './lib/gemini.js';
+import { VOICES, createGemini } from './lib/gemini.js';
 import { createHandler } from './lib/handler.js';
 import { createStore } from './lib/store.js';
 
@@ -24,7 +24,7 @@ export const name = 'dsh-imagine';
 // `credentials` is optional: when the dsh has its credential store, a key saved from the phone (credentials/set) is found there first.
 export const inject = { webServer: { required: true }, connection: { required: true }, tools: { required: true }, credentials: { required: false } };
 
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const BASE = '/imagine';
 
 /**
@@ -88,7 +88,8 @@ export const Config = z
         transcribe: z.boolean().default(true).volatile().description('Transcrever áudio em texto.'),
         live: z.boolean().default(true).volatile().description('Conversa por voz ao vivo.'),
       }),
-      voice: z.string().default('Kore').volatile().description('Voz padrão do Gemini.'),
+      // A closed list, so the phone offers a picker instead of a text box.
+      voice: z.union(VOICES.map((voice) => z.const(voice))).default('Kore').volatile().description('Voz padrão do Gemini.'),
       dailyImageLimit: z.number().step(1).min(0).default(40).volatile().description('Máximo de imagens por dia (trava de crédito). 0 = sem limite.'),
       keep: z.number().step(1).min(1).default(200).volatile().description('Quantas imagens guardar no servidor.'),
       apiKeyEnv: z.string().default('GEMINI_API_KEY').description('Nome da variável/credencial que guarda a chave.'),

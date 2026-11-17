@@ -8,7 +8,7 @@ test('_status says what is configured, with models and voices', async () => {
   try {
     const body = await (await s.get('_status')).json();
     assert.equal(body.configured, true);
-    assert.equal(body.version, '0.3.0');
+    assert.equal(body.version, '0.3.1');
     assert.deepEqual(body.modules, { image: true, speech: true, transcribe: true, live: true });
     assert.equal(body.models.image, 'gemini-3.1-flash-image');
     assert.ok(body.voices.includes('Kore'));
