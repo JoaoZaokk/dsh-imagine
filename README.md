@@ -34,6 +34,15 @@ Give the dsh process a key, either way:
 The key is read on every call, so changing it needs no restart. Generated pictures and their prompts are kept in
 `<DSH_HOME>/imagine/` (newest 200, configurable with `keep`).
 
+## Talking by voice (Gemini Live), turn by turn
+
+For clients that cannot hold a socket open, such as the phone app:
+
+- `POST /imagine/live/turn?session=<id>` with a 16 kHz mono 16-bit WAV as the body answers
+  `{ heard, said, mime: "audio/wav", audio: <base64 24 kHz WAV> }`. The same `session` id keeps one Gemini Live session
+  open between turns, so the model remembers the conversation (closed after 3 quiet minutes, at most 3 at once).
+- `DELETE /imagine/live/session/<id>` ends it. Turn the whole thing off with `modules.live: false`.
+
 ## Settings in the dsh (and on the phone)
 
 The plugin declares its options as the dsh's own settings form (namespace `dsh-imagine`). Every field is *volatile*:

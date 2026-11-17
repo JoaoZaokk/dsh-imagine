@@ -8,7 +8,7 @@ test('_status says what is configured, with models and voices', async () => {
   try {
     const body = await (await s.get('_status')).json();
     assert.equal(body.configured, true);
-    assert.equal(body.version, '0.3.1');
+    assert.equal(body.version, '0.4.0');
     assert.deepEqual(body.modules, { image: true, speech: true, transcribe: true, live: true });
     assert.equal(body.models.image, 'gemini-3.1-flash-image');
     assert.ok(body.voices.includes('Kore'));
@@ -225,4 +225,32 @@ test('check: a key in the body is passed to Gemini as the candidate and never ec
     assert.equal(seen[2].key, undefined, 'no key in the body: the stored one is checked');
     assert.equal((await s.post('check', { key: 42 })).status, 400, 'a key that is not a string is a bad request');
   } finally { await s.close(); }
+});
+
+test('live: a recorded turn goes to the session and comes back with text and a WAV; a bad id or body is refused', async () => {
+  const calls = [];
+  const live = {
+    async turn(args) { calls.push(args); return { heard: 'oi', said: 'olá!', audio: WAV }; },
+    end(id) { calls.push({ end: id }); return true; },
+  };
+  const s = await serve({ live });
+  try {
+    const ok = await s.post('live/turn?session=abc12345', WAV, { 'content-type': 'audio/wav' });
+    assert.equal(ok.status, 200);
+    const body = await ok.json();
+    assert.equal(body.heard, 'oi');
+    assert.equal(body.said, 'olá!');
+    assert.equal(body.mime, 'audio/wav');
+    assert.deepEqual(Buffer.from(body.audio, 'base64'), WAV);
+    assert.equal(calls[0].sessionId, 'abc12345');
+    assert.deepEqual(calls[0].wav, WAV);
+    assert.equal((await s.post('live/turn?session=../etc', WAV, { 'content-type': 'audio/wav' })).status, 400, 'a session id is plain');
+    assert.equal((await s.post('live/turn', WAV, { 'content-type': 'audio/wav' })).status, 400, 'a session id is needed');
+    assert.equal((await s.post('live/turn?session=abc12345', Buffer.alloc(0), { 'content-type': 'audio/wav' })).status, 400, 'empty audio');
+    const gone = await s.get('live/session/abc12345', { method: 'DELETE' });
+    assert.equal(gone.status, 200);
+    assert.deepEqual(calls.at(-1), { end: 'abc12345' });
+  } finally { await s.close(); }
+  const off = await serve({ live, config: { modules: { live: false } } });
+  try { assert.equal((await off.post('live/turn?session=abc12345', WAV, { 'content-type': 'audio/wav' })).status, 404, 'a turned-off module'); } finally { await off.close(); }
 });

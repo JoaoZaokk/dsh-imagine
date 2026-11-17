@@ -44,3 +44,27 @@ test('check: the real key passes and a made-up one is badKey', { skip, timeout: 
   const wrong = createGemini({ getKey: () => 'not-a-real-key' });
   await assert.rejects(wrong.check(), { code: 'badKey' });
 });
+
+test('live turns: a spoken question is answered aloud, and the session remembers the one before', { skip, timeout: 180000 }, async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { writeFileSync, readFileSync, mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createLiveSessions } = await import('../lib/live-sessions.js');
+  const dir = mkdtempSync(join(tmpdir(), 'live-'));
+  try {
+    const say = async (text) => {
+      const wav24 = await gemini.speak({ text, model: DEFAULTS.models.speech, voice: 'Kore' });
+      writeFileSync(join(dir, 'in24.wav'), wav24);
+      execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', join(dir, 'in24.wav'), '-ar', '16000', '-ac', '1', join(dir, 'in16.wav')]);
+      return readFileSync(join(dir, 'in16.wav'));
+    };
+    const sessions = createLiveSessions({ getKey: async () => key, model: DEFAULTS.models.live, voice: () => 'Kore' });
+    const first = await sessions.turn({ sessionId: 'e2e-test-1', wav: await say('Qual é a capital da França? Responda só com o nome.') });
+    assert.match(norm(first.said), /paris/);
+    assert.ok(first.audio.length > 8000, 'the answer came back as sound');
+    const second = await sessions.turn({ sessionId: 'e2e-test-1', wav: await say('E a da Itália?') });
+    assert.match(norm(second.said), /roma/, 'it understood "a da Itália" from the first question');
+    sessions.end('e2e-test-1');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

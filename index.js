@@ -17,6 +17,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { VOICES, createGemini } from './lib/gemini.js';
 import { createHandler } from './lib/handler.js';
+import { createLiveSessions } from './lib/live-sessions.js';
 import { createStore } from './lib/store.js';
 
 export const name = 'dsh-imagine';
@@ -24,7 +25,7 @@ export const name = 'dsh-imagine';
 // `credentials` is optional: when the dsh has its credential store, a key saved from the phone (credentials/set) is found there first.
 export const inject = { webServer: { required: true }, connection: { required: true }, tools: { required: true }, credentials: { required: false } };
 
-const VERSION = '0.3.1';
+const VERSION = '0.4.0';
 const BASE = '/imagine';
 
 /**
@@ -187,7 +188,8 @@ export function apply(ctx, config = {}) {
   const gemini = createGemini({ getKey });
   // What happened to the agent tools, for _status: the phone can say "the agent cannot draw yet".
   const agentTools = { ready: false };
-  const api = createHandler({ gemini, store, settings, hasKey: async () => Boolean(await getKey()), agentTools: () => ({ ...agentTools }) });
+  const live = createLiveSessions({ getKey, model: () => settings.models.live, voice: () => settings.voice });
+  const api = createHandler({ gemini, store, settings, live, hasKey: async () => Boolean(await getKey()), agentTools: () => ({ ...agentTools }) });
 
   ctx.effect(
     () =>

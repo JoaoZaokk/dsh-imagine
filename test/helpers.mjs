@@ -38,11 +38,11 @@ export function fakeGemini(over = {}) {
 }
 
 /** Starts the handler on a real HTTP server and returns helpers to call it. */
-export async function serve({ gemini = fakeGemini(), config = {}, hasKey = () => true, now } = {}) {
+export async function serve({ gemini = fakeGemini(), config = {}, hasKey = () => true, now, live } = {}) {
   const { dir, done } = tempDir();
   const settings = resolveSettings(config);
   const store = createStore({ dir, keep: settings.keep, ...(now ? { now } : {}) });
-  const api = createHandler({ gemini, store, settings, hasKey, ...(now ? { now } : {}) });
+  const api = createHandler({ gemini, store, settings, hasKey, live, ...(now ? { now } : {}) });
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     api.handle(req, res, url.pathname.replace(/^\/imagine\/?/, ''), url);
